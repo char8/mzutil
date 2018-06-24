@@ -8,6 +8,10 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+
+	"encoding/base64"
+
+	"github.com/zalando/go-keyring"
 )
 
 // configuration for the client
@@ -15,15 +19,16 @@ import (
 
 const (
 	CONFIG_NAME    = "config.json"
-	CONFIG_DIRNAME = ".i3block-monzo"
+	CONFIG_DIRNAME = ".mzutil"
+
+	KEYRING_SERVICE = "mzutil"
 
 	DIR_PERMS  = 0700
 	FILE_PERMS = 0600
 )
 
 type Config struct {
-	ClientId     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
+	CallbackPort string `json:"callback_port"`
 }
 
 var errNoConfig = errors.New("Configuration does not exist")
@@ -109,7 +114,43 @@ func WriteConfig(filename string, v interface{}) error {
 		return err
 	}
 
-	_, err := f.Write(b)
+	_, err = f.Write(b)
 
+	return err
+}
+
+// Store a value v as a b64 encoded json string in the local keychain
+// under the key k
+func WriteToKeychain(k string, v interface{}) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	s := base64.StdEncoding.EncodeToString(b)
+	if err != nil {
+		return err
+	}
+
+	err = keyring.Set(KEYRING_SERVICE, k, s)
+
+	return err
+}
+
+// reverse of WriteToKeychain
+func ReadFromKeychain(k string, v interface{}) error {
+	s, err := keyring.Get(KEYRING_SERVICE, k)
+
+	if err != nil {
+		return err
+	}
+
+	b, err := base64.StdEncoding.DecodeString(s)
+
+	if err != nil {
+		return err
+	}
+
+	err = json.Unmarshal(b, v)
 	return err
 }
