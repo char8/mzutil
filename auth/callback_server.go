@@ -51,7 +51,7 @@ func makeHandler(c chan callbackPayload) func(http.ResponseWriter, *http.Request
 // Spawns a server listening on `addr` for a OAuth callback with state and code
 // set as url parameters to the endpoint. Exits after timeout or on receipt of
 // a code/state pair.
-func WaitForCallback(addr, ep string, timeoutSeconds int) (code, state string, err error) {
+func waitForCallback(addr, ep string, timeoutSeconds int) (code, state string, err error) {
 	c := make(chan callbackPayload)
 
 	mux := http.NewServeMux()
