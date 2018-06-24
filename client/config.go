@@ -17,6 +17,7 @@ import (
 // configuration for the client
 // consists of API key and secret from dev portal, used to get OAuth tokens
 
+// TODO: make these attributes
 const (
 	CONFIG_NAME    = "config.json"
 	CONFIG_DIRNAME = ".mzutil"
@@ -78,11 +79,21 @@ func verifyConfigDir(path string) error {
 	return nil
 }
 
+type ConfigStore interface {
+	ReadValue(key string, v interface{}) error
+	WriteValue(key string, v interface{}) error
+}
+
+// Stores config values in a private directory under $HOME
+// in the filename <key>.json
+// should NOT use user-specified values as key!
+type FileConfigStore struct{}
+
 // Json unmarshals the contents of a config file into the value
 // pointed to by v
-func ReadConfig(filename string, v interface{}) error {
+func (c FileConfigStore) ReadValue(key string, v interface{}) error {
 	// Config files are pretty small so use ioutil.ReadFile()
-	fp := filepath.Join(getConfigPath(), filename)
+	fp := filepath.Join(getConfigPath(), key+".json")
 	b, err := ioutil.ReadFile(fp)
 
 	if err != nil {
@@ -100,8 +111,8 @@ func ReadConfig(filename string, v interface{}) error {
 // Writes a struct value pointed to by v to the named
 // config file in the config directory. If the file doesn't
 // exist it will be created with 0600 permissions
-func WriteConfig(filename string, v interface{}) error {
-	fp := filepath.Join(getConfigPath(), filename)
+func (c FileConfigStore) WriteValue(key string, v interface{}) error {
+	fp := filepath.Join(getConfigPath(), key+".json")
 	f, err := os.OpenFile(fp, os.O_WRONLY|os.O_CREATE, FILE_PERMS)
 	if err != nil {
 		return err
@@ -119,9 +130,11 @@ func WriteConfig(filename string, v interface{}) error {
 	return err
 }
 
+type KeychainConfigStore struct{}
+
 // Store a value v as a b64 encoded json string in the local keychain
 // under the key k
-func WriteToKeychain(k string, v interface{}) error {
+func (c KeychainConfigStore) WriteValue(key string, v interface{}) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -132,14 +145,13 @@ func WriteToKeychain(k string, v interface{}) error {
 		return err
 	}
 
-	err = keyring.Set(KEYRING_SERVICE, k, s)
+	err = keyring.Set(KEYRING_SERVICE, key, s)
 
 	return err
 }
 
-// reverse of WriteToKeychain
-func ReadFromKeychain(k string, v interface{}) error {
-	s, err := keyring.Get(KEYRING_SERVICE, k)
+func (c KeychainConfigStore) ReadValue(key string, v interface{}) error {
+	s, err := keyring.Get(KEYRING_SERVICE, key)
 
 	if err != nil {
 		return err
@@ -154,3 +166,6 @@ func ReadFromKeychain(k string, v interface{}) error {
 	err = json.Unmarshal(b, v)
 	return err
 }
+
+var _ ConfigStore = KeychainConfigStore{}
+var _ ConfigStore = FileConfigStore{}
