@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -36,10 +37,18 @@ func NewFileConfigStore(configDir string) ConfigStore {
 	}
 }
 
+func (c fileConfigStore) String() string {
+	return fmt.Sprintf("FileConfigStore(%v)", c.getConfigPath())
+}
+
 // Json unmarshals the contents of a config file into the value
 // pointed to by v
 func (c fileConfigStore) ReadValue(key string, v interface{}) error {
-	c.verifyConfigDir()
+	err := c.verifyConfigDir()
+	if err != nil {
+		return err
+	}
+
 	// Config files are pretty small so use ioutil.ReadFile()
 	fp := filepath.Join(c.getConfigPath(), key+".json")
 	b, err := ioutil.ReadFile(fp)
@@ -60,7 +69,18 @@ func (c fileConfigStore) ReadValue(key string, v interface{}) error {
 // config file in the config directory. If the file doesn't
 // exist it will be created with 0600 permissions
 func (c fileConfigStore) WriteValue(key string, v interface{}) error {
-	c.verifyConfigDir()
+
+	err := c.verifyConfigDir()
+
+	// create the dir if it doesn't exist
+	if err == ErrNoConfig {
+		err = os.Mkdir(c.getConfigPath(), c.dirPerms)
+	}
+
+	if err != nil {
+		return err
+	}
+
 	fp := filepath.Join(c.getConfigPath(), key+".json")
 	f, err := os.OpenFile(fp, os.O_WRONLY|os.O_CREATE, c.filePerms)
 	if err != nil {
@@ -84,6 +104,7 @@ func (c fileConfigStore) getConfigPath() string {
 	u, err := user.Current()
 
 	if err != nil {
+		// TODO: return error instead
 		log.Fatalf("Could not get current user: %v", err)
 	}
 
@@ -104,7 +125,7 @@ func (c fileConfigStore) verifyConfigDir() error {
 	}
 
 	// check that config dir has 0700 permissions
-	if stat.Mode() != c.dirPerms {
+	if stat.Mode().Perm() != c.dirPerms {
 		return ErrInvalidPerms
 	}
 
@@ -115,7 +136,7 @@ func (c fileConfigStore) verifyConfigDir() error {
 	}
 
 	for _, f := range fs {
-		if !f.IsDir() && (f.Mode() != c.filePerms) {
+		if !f.IsDir() && (f.Mode().Perm() != c.filePerms) {
 			return ErrInvalidPerms
 		}
 	}
