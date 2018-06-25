@@ -10,19 +10,18 @@ import (
 
 // this file implements a simple callback handler for OAuth2 flows
 
+// callbackPayload stores the OAuth2 callback code and state strings for transfer
+// via a channel
 type callbackPayload struct {
 	code  string
 	state string
 }
 
-const (
-	responseTimeout = 5
-)
-
+// Returned if we don't get a callback within the requested timeout period
 var ErrTimeout = errors.New("Timeout waiting for OAuth login")
 
-// makes a func compatible with HandleFunc that pushes the contents of
-// a callback into the passed channel
+// makeHandler returns a http.HandleFunc for the OAuth2 callback URL. The passed
+// channel is to be used to retreive a callbackPayload struct
 func makeHandler(c chan callbackPayload) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		err := req.ParseForm()
@@ -48,7 +47,7 @@ func makeHandler(c chan callbackPayload) func(http.ResponseWriter, *http.Request
 	}
 }
 
-// Spawns a server listening on `addr` for a OAuth callback with state and code
+// waitForCallback spawns a server listening for a request with state and code
 // set as url parameters to the endpoint. Exits after timeout or on receipt of
 // a code/state pair.
 func waitForCallback(addr, ep string, timeoutSeconds int) (code, state string, err error) {
