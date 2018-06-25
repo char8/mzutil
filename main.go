@@ -3,17 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/char8/mzutil/auth"
-	"github.com/char8/mzutil/client"
 	"io/ioutil"
+
+	"github.com/char8/mzutil/config"
+	"github.com/char8/mzutil/monzo"
 )
 
 func main() {
-	ks := client.KeychainConfigStore{}
+	ks := config.NewKeychainConfigStore("mzutil")
 
 	//ctx := context.Background()
 
-	a := auth.NewAuthenticator(ks, 10035)
+	a := monzo.NewAuthenticator(ks, 10035)
 	//err := a.Login()
 
 	cli := a.NewClient(context.Background())

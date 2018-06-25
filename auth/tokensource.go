@@ -4,13 +4,13 @@ import (
 	"log"
 	"sync"
 
-	"github.com/char8/mzutil/client"
+	"github.com/char8/mzutil/config"
 	"golang.org/x/oauth2"
 )
 
 // PersistToken stores a oauth2 token in the specified store with the key
 // set to the token name prefixed by `oauth_token:`
-func PersistToken(store client.ConfigStore, name string, t *oauth2.Token) error {
+func PersistToken(store config.ConfigStore, name string, t *oauth2.Token) error {
 	key := "oauth_token:" + name
 	err := store.WriteValue(key, t)
 	if err != nil {
@@ -21,7 +21,7 @@ func PersistToken(store client.ConfigStore, name string, t *oauth2.Token) error 
 
 // FetchToken retrieves  a token from the specified store. The token must have
 // been stored with the key set to `oauth_token:`+name
-func FetchToken(store client.ConfigStore, name string) *oauth2.Token {
+func FetchToken(store config.ConfigStore, name string) *oauth2.Token {
 	tok := &oauth2.Token{}
 	err := store.ReadValue("oauth_token:"+name, tok)
 	if err != nil {
@@ -40,7 +40,7 @@ type cachedReuseTokenSource struct {
 	name string
 	new  oauth2.TokenSource
 
-	store client.ConfigStore
+	store config.ConfigStore
 
 	mu sync.Mutex // guards t
 	t  *oauth2.Token
@@ -69,7 +69,7 @@ func (c *cachedReuseTokenSource) Token() (*oauth2.Token, error) {
 }
 
 // NewTokenSource constructs a new cachedReuseTokenSource instance
-func NewTokenSource(name string, store client.ConfigStore, tok *oauth2.Token,
+func NewTokenSource(name string, store config.ConfigStore, tok *oauth2.Token,
 	ts oauth2.TokenSource) oauth2.TokenSource {
 
 	return &cachedReuseTokenSource{name: name, new: ts, store: store, t: tok}

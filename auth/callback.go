@@ -47,10 +47,10 @@ func makeHandler(c chan callbackPayload) func(http.ResponseWriter, *http.Request
 	}
 }
 
-// waitForCallback spawns a server listening for a request with state and code
+// WaitForCallback spawns a server listening for a request with state and code
 // set as url parameters to the endpoint. Exits after timeout or on receipt of
 // a code/state pair.
-func waitForCallback(addr, ep string, timeoutSeconds int) (code, state string, err error) {
+func WaitForCallback(addr, ep string, timeoutSeconds int) (code, state string, err error) {
 	c := make(chan callbackPayload)
 
 	mux := http.NewServeMux()
