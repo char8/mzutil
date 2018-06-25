@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"encoding/base64"
 
@@ -17,6 +18,10 @@ func NewKeychainConfigStore(serviceName string) ConfigStore {
 }
 
 var _ ConfigStore = keychainConfigStore{}
+
+func (c keychainConfigStore) String() string {
+	return fmt.Sprintf("KeychainConfigStore(local)")
+}
 
 // Store a value v as a b64 encoded json string in the local keychain
 // under the key k

@@ -6,53 +6,66 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
+	"errors"
 	"log"
 	"net/http"
+	"net/url"
 
 	"github.com/char8/mzutil/auth"
 	"github.com/char8/mzutil/config"
 	"golang.org/x/oauth2"
+
+	"github.com/skratchdot/open-golang/open"
 )
 
-type monzoAuthenticator struct {
-	name        string
-	c           oauth2.Config      // the oauth2 config
-	s           config.ConfigStore // storage for secrets (tokens)
-	cbPort      int                // port for the callback server
-	cbEndpoint  string
-	openBrowser bool
+var monzoTokenUrl string = "https://api.monzo.com/oauth2/token"
+var monzoAuthUrl string = "https://auth.monzo.com/"
+var monzoApiUrl = "https://api.monzo.com/"
+
+var ErrBadConfig = errors.New("Bad auth configuration")
+var ErrCsrf = errors.New("CSRF token mistmatch")
+
+type AuthConfig struct {
+	ClientSecret string `json:"client_secret"`
+	ClientId     string `json:"client_id"`
+	CallbackUrl  string `json:"callback_url"`
 }
 
-func NewAuthenticator(store config.ConfigStore, cbPort int) auth.Authenticator {
-	cbEndpoint := "/mzcallback"
-	cbUrl := fmt.Sprintf("http://localhost:%v/%v", cbPort, cbEndpoint[1:])
+func NewAuthenticator(store config.ConfigStore) (auth.Authenticator, error) {
+	// load config from store
+	var c AuthConfig
 
-	clientId := ""
-	clientSecret := ""
+	err := store.ReadValue(AuthConfigKey, &c)
 
-	monzoTokenUrl := "https://api.monzo.com/oauth2/token"
+	if err != nil {
+		return nil, err
+	}
+
+	// monzo does not accept secret and id via HTTP basic auth
 	oauth2.RegisterBrokenAuthHeaderProvider(monzoTokenUrl)
 
 	r := monzoAuthenticator{
 		name: "monzo",
 		c: oauth2.Config{
-			ClientID:     clientId,
-			ClientSecret: clientSecret,
+			ClientID:     c.ClientId,
+			ClientSecret: c.ClientSecret,
 			Endpoint: oauth2.Endpoint{
-				AuthURL:  "https://auth.monzo.com/",
+				AuthURL:  monzoAuthUrl,
 				TokenURL: monzoTokenUrl,
 			},
-			RedirectURL: cbUrl,
+			RedirectURL: c.CallbackUrl,
 		},
-		s:          store,
-		cbPort:     cbPort,
-		cbEndpoint: cbEndpoint,
+		s:           store,
+		callbackUrl: c.CallbackUrl,
+		openBrowser: true,
 	}
 
-	return &r
+	return &r, nil
 }
 
+// generateRandomString generates a l byte random string
+// inspired by:
+// https://blog.questionable.services/article/generating-secure-random-numbers-crypto-rand/
 func generateRandomString(l int) (string, error) {
 	b := make([]byte, l)
 	_, err := rand.Read(b)
@@ -63,35 +76,74 @@ func generateRandomString(l int) (string, error) {
 	return base64.URLEncoding.EncodeToString(b), err
 }
 
+type monzoAuthenticator struct {
+	name        string
+	c           oauth2.Config      // the oauth2 config
+	s           config.ConfigStore // storage for secrets (tokens)
+	callbackUrl string
+	openBrowser bool
+}
+
 func (m *monzoAuthenticator) Login() error {
 	// give the user the URL to go to
 
 	state, err := generateRandomString(32)
 
 	if err != nil {
-		log.Fatalf("Could not generate nonce: %v", err)
+		log.Printf("Could not generate nonce: %v", err)
+		return err
 	}
 
 	authUrl := m.c.AuthCodeURL(state)
 	log.Printf("Authenticating by visiting: %v", authUrl)
 
-	addr := fmt.Sprintf(":%v", m.cbPort)
-	code, retState, err := auth.WaitForCallback(addr, m.cbEndpoint, 300)
+	cu, err := url.Parse(m.callbackUrl)
 
 	if err != nil {
-		log.Fatalf("Auth Error: %v", err)
+		log.Printf("Bad callback URL: %v", err)
+		return err
+	}
+
+	if cu.Scheme != "http" {
+		log.Printf("Scheme for callback URL must be HTTP")
+		return ErrBadConfig
+	}
+
+	if (m.c.ClientSecret == "") || (m.c.ClientID == "") {
+		log.Printf("Invalid client secret or id")
+		return ErrBadConfig
+	}
+
+	if m.openBrowser {
+		open.Start(authUrl)
+	}
+
+	addr := ":80"
+
+	if p := cu.Port(); p != "" {
+		addr = ":" + p
+	}
+
+	code, retState, err := auth.WaitForCallback(addr, cu.Path, 300)
+
+	if err != nil {
+		log.Printf("Auth Error: %v", err)
+		return err
 	}
 
 	if state != retState {
-		log.Fatalf("OAuth2 callback state mismatch")
+		log.Printf("OAuth2 callback state mismatch")
+		return ErrCsrf
 	}
 
 	tok, err := m.c.Exchange(context.Background(), code)
 
 	if (err != nil) || !tok.Valid() {
-		log.Fatalf("Could not exchange authorization code for token: %v", err)
+		log.Printf("Could not exchange authorization code for token: %v", err)
+		return ErrBadConfig
 	}
 
+	log.Printf("Got token type: %v expires: %v valid: %v", tok.Type(), tok.Expiry, tok.Valid())
 	return auth.PersistToken(m.s, m.name, tok)
 }
 

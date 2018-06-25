@@ -63,6 +63,7 @@ func WaitForCallback(addr, ep string, timeoutSeconds int) (code, state string, e
 	go func() {
 		log.Printf("Listening on %v for OAuth callback on %v", addr, ep)
 		if err := srv.ListenAndServe(); (err != nil) && (err != http.ErrServerClosed) {
+			// TODO: return error instead
 			log.Fatalf("OAuth callback server error: %v", err)
 		}
 	}()
