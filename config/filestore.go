@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sync"
 )
 
 const (
@@ -25,25 +26,29 @@ type fileConfigStore struct {
 	configDirName string
 	dirPerms      os.FileMode
 	filePerms     os.FileMode
+	mu            sync.RWMutex
 }
 
-var _ ConfigStore = fileConfigStore{}
+var _ ConfigStore = &fileConfigStore{}
 
 func NewFileConfigStore(configDir string) ConfigStore {
-	return fileConfigStore{
+	return &fileConfigStore{
 		configDirName: configDir,
 		dirPerms:      DirPerms,
 		filePerms:     FilePerms,
 	}
 }
 
-func (c fileConfigStore) String() string {
+func (c *fileConfigStore) String() string {
 	return fmt.Sprintf("FileConfigStore(%v)", c.getConfigPath())
 }
 
 // Json unmarshals the contents of a config file into the value
 // pointed to by v
-func (c fileConfigStore) ReadValue(key string, v interface{}) error {
+func (c *fileConfigStore) ReadValue(key string, v interface{}) error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	err := c.verifyConfigDir()
 	if err != nil {
 		return err
@@ -69,6 +74,8 @@ func (c fileConfigStore) ReadValue(key string, v interface{}) error {
 // config file in the config directory. If the file doesn't
 // exist it will be created with 0600 permissions
 func (c fileConfigStore) WriteValue(key string, v interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	err := c.verifyConfigDir()
 
@@ -100,7 +107,7 @@ func (c fileConfigStore) WriteValue(key string, v interface{}) error {
 }
 
 // Get the config dir as $HOMEDIR/<CONFIG_DIRNAME>/
-func (c fileConfigStore) getConfigPath() string {
+func (c *fileConfigStore) getConfigPath() string {
 	u, err := user.Current()
 
 	if err != nil {
@@ -114,7 +121,7 @@ func (c fileConfigStore) getConfigPath() string {
 
 // Checks that the config dir/files are private to the user
 // 0700/0600 permissions. Otherwise fail.
-func (c fileConfigStore) verifyConfigDir() error {
+func (c *fileConfigStore) verifyConfigDir() error {
 	path := c.getConfigPath()
 	stat, err := os.Stat(path)
 	if err != nil || !stat.IsDir() {
