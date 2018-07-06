@@ -1,4 +1,4 @@
-// package auth implements utility functions to implement OAuth2 client flow
+//package auth implements utility functions to implement OAuth2 client flow
 // and cache tokens
 package monzo
 
@@ -147,9 +147,8 @@ func (m *monzoAuthenticator) Login() error {
 	return auth.PersistToken(m.s, m.name, tok)
 }
 
-func (m *monzoAuthenticator) NewClient(ctx context.Context) *http.Client {
+func (m *monzoAuthenticator) NewHttpClient(ctx context.Context) *http.Client {
 	tok := auth.FetchToken(m.s, m.name)
 	ts := auth.NewTokenSource(m.name, m.s, tok, m.c.TokenSource(ctx, tok))
-
 	return oauth2.NewClient(ctx, ts)
 }

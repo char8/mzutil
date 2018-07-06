@@ -33,13 +33,13 @@ func loginRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	testClient := auth.NewClient(context.Background())
-	resp, err := testClient.Get("https://api.monzo.com/ping/whoami")
+	client := monzo.NewClient(context.Background(), auth)
+	w, err := client.WhoAmI()
 
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Server response is: %v", resp.StatusCode)
+	fmt.Println("Server response is: %+v", w)
 	return nil
 }

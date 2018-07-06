@@ -9,5 +9,5 @@ import (
 
 type Authenticator interface {
 	Login() error
-	NewClient(ctx context.Context) *http.Client
+	NewHttpClient(ctx context.Context) *http.Client
 }
