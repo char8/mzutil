@@ -31,6 +31,10 @@ func balanceRun(cmd *cobra.Command, args []string) error {
 
 	bal, err := client.Balance(args[0])
 
+	if err != nil {
+		return err
+	}
+
 	fmt.Printf("%.2f %v", float64(bal.Balance)/100.0, bal.Currency)
-	return err
+	return nil
 }

@@ -1,8 +1,9 @@
 package auth
 
 import (
-	"log"
 	"sync"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/char8/mzutil/config"
 	"golang.org/x/oauth2"
@@ -14,7 +15,7 @@ func PersistToken(store config.ConfigStore, name string, t *oauth2.Token) error 
 	key := "oauth_token:" + name
 	err := store.WriteValue(key, t)
 	if err != nil {
-		log.Printf("Could not persist OAuth2 token: %v", err)
+		log.WithError(err).Error("could not persist oauth2 token")
 	}
 	return err
 }
@@ -25,7 +26,7 @@ func FetchToken(store config.ConfigStore, name string) *oauth2.Token {
 	tok := &oauth2.Token{}
 	err := store.ReadValue("oauth_token:"+name, tok)
 	if err != nil {
-		log.Printf("Could not load token from store: %v", err)
+		log.WithError(err).Error("could not load token from store")
 		tok = nil
 	}
 	return tok

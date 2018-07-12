@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/char8/mzutil/auth"
+	log "github.com/sirupsen/logrus"
 )
 
 type BalanceResponse struct {
@@ -41,14 +42,36 @@ func NewClient(ctx context.Context, a auth.Authenticator) *Client {
 	}
 }
 
+func (c *Client) HttpClient() *http.Client {
+	return c.httpClient
+}
+
+func handleError(resp *http.Response, err error) error {
+	le := log.WithError(err)
+	if resp != nil {
+		le = le.WithField("statusCode", resp.StatusCode)
+	}
+	le.Error("request error")
+
+	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		return ErrAuthError
+	case http.StatusForbidden:
+		return ErrAuthError
+	default:
+		return err
+	}
+}
+
 func (c *Client) Balance(accountId string) (b BalanceResponse, err error) {
 	url := "https://api.monzo.com/balance?account_id=" + accountId
 	resp, err := c.httpClient.Get(url)
 
-	if err != nil {
-		return
+	if (err != nil) || (resp.StatusCode != http.StatusOK) {
+		return b, handleError(resp, err)
 	}
 
+	log.Error(resp.StatusCode)
 	jd := json.NewDecoder(resp.Body)
 	err = jd.Decode(&b)
 
@@ -59,8 +82,8 @@ func (c *Client) WhoAmI() (w WhoAmIResponse, err error) {
 	url := "https://api.monzo.com/ping/whoami"
 	resp, err := c.httpClient.Get(url)
 
-	if err != nil {
-		return
+	if (err != nil) || (resp.StatusCode != http.StatusOK) {
+		return w, handleError(resp, err)
 	}
 
 	jd := json.NewDecoder(resp.Body)
@@ -73,8 +96,8 @@ func (c *Client) Accounts() (a []AccountResponse, err error) {
 	url := "https://api.monzo.com/accounts"
 	resp, err := c.httpClient.Get(url)
 
-	if err != nil {
-		return
+	if (err != nil) || (resp.StatusCode != http.StatusOK) {
+		return a, handleError(resp, err)
 	}
 
 	accs := AccountsResponse{}

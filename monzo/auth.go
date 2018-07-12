@@ -6,10 +6,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
-	"log"
 	"net/http"
 	"net/url"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/char8/mzutil/auth"
 	"github.com/char8/mzutil/config"
@@ -18,12 +18,37 @@ import (
 	"github.com/skratchdot/open-golang/open"
 )
 
-var monzoTokenUrl string = "https://api.monzo.com/oauth2/token"
-var monzoAuthUrl string = "https://auth.monzo.com/"
+var monzoTokenUrl = "https://api.monzo.com/oauth2/token"
+var monzoAuthUrl = "https://auth.monzo.com/"
 var monzoApiUrl = "https://api.monzo.com/"
+var MonzoLogoutUrl = "https://api.monzo.com/oauth2/logout"
 
-var ErrBadConfig = errors.New("Bad auth configuration")
-var ErrCsrf = errors.New("CSRF token mistmatch")
+// ClientError packages an error string and exit code as most errors are fatal
+type ClientError struct {
+	s        string
+	exitCode int
+}
+
+func (c *ClientError) Error() string {
+	return c.s
+}
+
+func (c *ClientError) ExitCode() int {
+	return c.exitCode
+}
+
+func NewClientError(exitCode int, err string) error {
+	return &ClientError{exitCode: exitCode, s: err}
+}
+
+// ErrAuthError returned on OAuth2 error
+var ErrAuthError = NewClientError(3, "Authentication Error")
+
+// ErrBadConfig returned if client_secret, client_id not set
+var ErrBadConfig = NewClientError(4, "Bad auth configuration")
+
+// ErrCsrf returns if there's a csrf error on the oauth callback
+var ErrCsrf = NewClientError(5, "CSRF token mistmatch")
 
 type AuthConfig struct {
 	ClientSecret string `json:"client_secret"`
@@ -31,6 +56,8 @@ type AuthConfig struct {
 	CallbackUrl  string `json:"callback_url"`
 }
 
+// Creates a new Authenticator which can be used to Login via OAuth2 and
+// create a monzo client
 func NewAuthenticator(store config.ConfigStore) (auth.Authenticator, error) {
 	// load config from store
 	var c AuthConfig
@@ -44,7 +71,7 @@ func NewAuthenticator(store config.ConfigStore) (auth.Authenticator, error) {
 	// monzo does not accept secret and id via HTTP basic auth
 	oauth2.RegisterBrokenAuthHeaderProvider(monzoTokenUrl)
 
-	r := monzoAuthenticator{
+	r := &monzoAuthenticator{
 		name: "monzo",
 		c: oauth2.Config{
 			ClientID:     c.ClientId,
@@ -60,7 +87,7 @@ func NewAuthenticator(store config.ConfigStore) (auth.Authenticator, error) {
 		openBrowser: true,
 	}
 
-	return &r, nil
+	return r, nil
 }
 
 // generateRandomString generates a l byte random string
@@ -90,30 +117,29 @@ func (m *monzoAuthenticator) Login() error {
 	state, err := generateRandomString(32)
 
 	if err != nil {
-		log.Printf("Could not generate nonce: %v", err)
+		log.WithError(err).Error("Could not generate nonce")
 		return err
 	}
 
 	authUrl := m.c.AuthCodeURL(state)
-	log.Printf("Authenticating by visiting: %v", authUrl)
+	log.Infof("Authenticating by visiting: %v", authUrl)
 
 	cu, err := url.Parse(m.callbackUrl)
 
-	if err != nil {
-		log.Printf("Bad callback URL: %v", err)
-		return err
-	}
-
-	if cu.Scheme != "http" {
-		log.Printf("Scheme for callback URL must be HTTP")
+	// check if callback URL is valid
+	switch {
+	case err != nil:
+		log.WithError(err).Error("bad oauth callback URL.")
+		return ErrBadConfig
+	case cu.Scheme != "http":
+		log.Error("Scheme for callback URL must be HTTP")
+		return ErrBadConfig
+	case (m.c.ClientSecret == "") || (m.c.ClientID == ""):
+		log.Error("Invalid client secret or id")
 		return ErrBadConfig
 	}
 
-	if (m.c.ClientSecret == "") || (m.c.ClientID == "") {
-		log.Printf("Invalid client secret or id")
-		return ErrBadConfig
-	}
-
+	// use xdg-open if openBrowser is set
 	if m.openBrowser {
 		open.Start(authUrl)
 	}
@@ -124,26 +150,32 @@ func (m *monzoAuthenticator) Login() error {
 		addr = ":" + p
 	}
 
+	log.Infof("listening on %v endpoint %v for callback", addr, cu.Path)
 	code, retState, err := auth.WaitForCallback(addr, cu.Path, 300)
 
 	if err != nil {
-		log.Printf("Auth Error: %v", err)
-		return err
+		log.WithError(err).Error("authentication error")
+		return ErrAuthError
 	}
 
 	if state != retState {
-		log.Printf("OAuth2 callback state mismatch")
+		log.Error("oauth callback state mismatch")
 		return ErrCsrf
 	}
 
-	tok, err := m.c.Exchange(context.Background(), code)
+	// exchange access token for auth token
+	tok, err := m.c.Exchange(context.TODO(), code)
 
 	if (err != nil) || !tok.Valid() {
-		log.Printf("Could not exchange authorization code for token: %v", err)
+		log.WithError(err).Error("Could not exchange authorization code")
 		return ErrBadConfig
 	}
 
-	log.Printf("Got token type: %v expires: %v valid: %v", tok.Type(), tok.Expiry, tok.Valid())
+	log.WithFields(log.Fields{
+		"type":   tok.Type(),
+		"expiry": tok.Expiry,
+		"valid":  tok.Valid(),
+	}).Info("got token")
 	return auth.PersistToken(m.s, m.name, tok)
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/char8/mzutil/monzo"
 	"github.com/spf13/cobra"
 )
 
@@ -26,8 +27,15 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+	err := rootCmd.Execute()
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v", err)
+
+		if cerr, ok := err.(*monzo.ClientError); ok {
+			os.Exit(cerr.ExitCode())
+		}
+
 		os.Exit(1)
 	}
 }
